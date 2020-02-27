@@ -5,17 +5,34 @@ import zio.test._
 import zio.{Ref, UIO, ZIO}
 
 object ZTestRunner {
-  case class Args private (testClass: String, testMethod: Option[String] = None)
+
+  case class Args private(testClass: String, testMethod: Option[String] = None)
+
   object Args {
+    /**
+     * Need to read args from file if command line shortener is enabled.
+     *
+     * https://blog.jetbrains.com/idea/2017/10/intellij-idea-2017-3-eap-configurable-command-line-shortener-and-more/
+     */
+    def readArgsFromFileIfCommandLineShortenerIsEnabled(args: List[String]): Option[List[String]] = {
+      if (args.length == 1 && args.head.startsWith("@")) {
+        val f = scala.io.Source.fromFile(args.head.drop(1))
+        try Some(f.getLines().toList) finally f.close()
+      } else {
+        None
+      }
+    }
+
     def parse(args: List[String]): Args = {
       // [-s testClassName ...] [-t testMethodName ...] -showProgressMessages bool
       @scala.annotation.tailrec
       def go(args: List[String], parsed: Args): Args = args match {
-        case "-s" :: testClass :: xs         => go(xs, parsed.copy(testClass = testClass))
+        case "-s" :: testClass :: xs => go(xs, parsed.copy(testClass = testClass))
         case "-testName" :: testMethod :: xs => go(xs, parsed.copy(testMethod = Some(testMethod)))
-        case _                               => parsed
+        case _ => parsed
       }
-      go(args, Args(""))
+
+      go(readArgsFromFileIfCommandLineShortenerIsEnabled(args).getOrElse(args), Args(""))
     }
   }
 
@@ -32,7 +49,7 @@ object ZTestRunner {
 
   def run(args: Array[String]): Unit = {
     val parsedArgs = Args.parse(args.toList)
-    val spec       = createSpec(parsedArgs)
+    val spec = createSpec(parsedArgs)
     spec.runner
       .withReporter(TestRunnerReporter[spec.Label, spec.Failure, spec.Success]())
       .unsafeRun {
@@ -49,7 +66,7 @@ object TestRunnerReporter {
   def apply[L, E, S](): TestReporter[L, E, S] = { (_: Duration, executedSpec: ExecutedSpec[L, E, S]) =>
     for {
       res <- render(executedSpec.mapLabel(_.toString))
-      _   <- ZIO.foreach(res)(s => ZIO.effectTotal(println(s)))
+      _ <- ZIO.foreach(res)(s => ZIO.effectTotal(println(s)))
     } yield ()
   }
 
@@ -62,27 +79,28 @@ object TestRunnerReporter {
         executedSpec.caseValue match {
           case Spec.SuiteCase(label, executedSpecs, _) =>
             for {
-              id       <- newId
-              specs    <- executedSpecs
-              started  = suiteStarted(label, id, pid)
+              id <- newId
+              specs <- executedSpecs
+              started = suiteStarted(label, id, pid)
               finished = suiteFinished(label, id)
-              rest     <- UIO.foreach(specs)(loop(_, id)).map(_.flatten)
+              rest <- UIO.foreach(specs)(loop(_, id)).map(_.flatten)
             } yield started +: rest :+ finished
           case Spec.TestCase(label, result) =>
             for {
-              id      <- newId
+              id <- newId
               results <- DefaultTestReporter.render(executedSpec.mapLabel(_.toString))
               started = testStarted(label, id, pid)
               finished <- result.map {
-                           case Right(TestSuccess.Succeeded(_)) =>
-                             Seq(testFinished(label, id))
-                           case Right(TestSuccess.Ignored) =>
-                             Seq(testIgnored(label, id))
-                           case Left(_) =>
-                             Seq(testFailed(label, id, results.toList))
-                         }
+                case Right(TestSuccess.Succeeded(_)) =>
+                  Seq(testFinished(label, id))
+                case Right(TestSuccess.Ignored) =>
+                  Seq(testIgnored(label, id))
+                case Left(_) =>
+                  Seq(testFailed(label, id, results.toList))
+              }
             } yield started +: finished
         }
+
       loop(executedSpec, 0)
     }
 
@@ -106,7 +124,7 @@ object TestRunnerReporter {
   private def testFailed(label: String, id: Int, res: List[RenderedResult]) = res match {
     case r :: Nil =>
       tc(s"testFailed name='${escapeString(label)}' nodeId='$id' message='Assertion failed:' " +
-          s"details='${escapeString(r.rendered.drop(1).mkString("\n"))}'")
+        s"details='${escapeString(r.rendered.drop(1).mkString("\n"))}'")
     case _ => tc(s"testFailed name='${escapeString(label)}' message='Assertion failed' nodeId='$id'")
   }
 

@@ -1,0 +1,4 @@
+-s
+zio.intellij.testsupport.runner.ZTestRunnerSpec
+-showProgressMessages
+true

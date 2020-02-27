@@ -1,6 +1,7 @@
 plugins {
     id 'scala'
     id 'org.jetbrains.intellij'
+    id "com.github.ManifestClasspath" version "0.1.0-RELEASE"
 }
 
 repositories() {
@@ -16,4 +17,5 @@ dependencies {
     compileOnly 'org.scala-lang:scala-library:2.12.10'
     compileOnly 'dev.zio:zio_2.12:1.0.0-RC17'
     compileOnly 'dev.zio:zio-test_2.12:1.0.0-RC17'
+    testImplementation 'org.scalatest:scalatest_2.12:3.1.1'
 }

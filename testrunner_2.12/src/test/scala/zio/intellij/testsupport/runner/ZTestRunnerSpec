@@ -1,0 +1,13 @@
+package zio.intellij.testsupport.runner
+
+import org.scalatest.fixture
+import org.scalatest.matchers.must.Matchers
+
+class ZTestRunnerSpec extends fixture.FlatSpec with Matchers {
+
+  "ZTestRunner.Args" should "read arguments from a file if command line shortener is enalbed" in {
+    ZTestRunner.Args.readArgsFromFileIfCommandLineShortenerIsEnabled(
+      List("@..\\resources\\abstracttest7256187270085189896.tmp")
+    ) should be List("-s", "zio.intellij.testsupport.runner.ZTestRunnerSpec", "-showProgressMessages", "true")
+  }
+}
