@@ -7,6 +7,20 @@ import zio.{Ref, UIO, ZIO}
 object ZTestRunner {
   case class Args private (testClass: String, testMethod: Option[String] = None)
   object Args {
+    /**
+     * Need to read args from file if command line shortener is enabled.
+     *
+     * https://blog.jetbrains.com/idea/2017/10/intellij-idea-2017-3-eap-configurable-command-line-shortener-and-more/
+     */
+    def readArgsFromFileIfCommandLineShortenerIsEnabled(args: List[String]): Option[List[String]] = {
+      if (args.length == 1 && args.head.startsWith("@")) {
+        val f = scala.io.Source.fromFile(args.head.drop(1))
+        try Some(f.getLines().toList) finally f.close()
+      } else {
+        None
+      }
+    }
+
     def parse(args: List[String]): Args = {
       // [-s testClassName ...] [-t testMethodName ...] -showProgressMessages bool
       @scala.annotation.tailrec
@@ -15,7 +29,8 @@ object ZTestRunner {
         case "-testName" :: testMethod :: xs => go(xs, parsed.copy(testMethod = Some(testMethod)))
         case _                               => parsed
       }
-      go(args, Args(""))
+
+      go(readArgsFromFileIfCommandLineShortenerIsEnabled(args).getOrElse(args), Args(""))
     }
   }
 
@@ -34,7 +49,7 @@ object ZTestRunner {
     val parsedArgs = Args.parse(args.toList)
     val spec       = createSpec(parsedArgs)
     spec.runner
-      .withReporter(TestRunnerReporter[spec.Label, spec.Failure, spec.Success]())
+      .withReporter(TestRunnerReporter[spec.Failure]())
       .unsafeRun {
         parsedArgs.testMethod.fold(spec.spec)(method => {
           spec.spec
@@ -46,19 +61,19 @@ object ZTestRunner {
 }
 
 object TestRunnerReporter {
-  def apply[L, E, S](): TestReporter[L, E, S] = { (_: Duration, executedSpec: ExecutedSpec[L, E, S]) =>
+  def apply[E](): TestReporter[E] = { (_: Duration, executedSpec: ExecutedSpec[E]) =>
     for {
       res <- render(executedSpec.mapLabel(_.toString))
-      _   <- ZIO.foreach(res)(s => ZIO.effectTotal(println(s)))
+      _ <- ZIO.foreach(res)(s => ZIO.effectTotal(println(s)))
     } yield ()
   }
 
-  def render[E, S](executedSpec: ExecutedSpec[String, E, S]): UIO[Seq[String]] =
+  def render[E](executedSpec: ExecutedSpec[E]): UIO[Seq[String]] =
     Ref.make(0).flatMap { idCounter =>
       def newId: UIO[Int] =
-        idCounter.update(_ + 1)
+        idCounter.getAndUpdate(_ + 1)
 
-      def loop(executedSpec: ExecutedSpec[String, E, S], pid: Int): UIO[Seq[String]] =
+      def loop(executedSpec: ExecutedSpec[E], pid: Int): UIO[Seq[String]] =
         executedSpec.caseValue match {
           case Spec.SuiteCase(label, executedSpecs, _) =>
             for {
@@ -68,10 +83,10 @@ object TestRunnerReporter {
               finished = suiteFinished(label, id)
               rest     <- UIO.foreach(specs)(loop(_, id)).map(_.flatten)
             } yield started +: rest :+ finished
-          case Spec.TestCase(label, result) =>
+          case Spec.TestCase(label, result, _) =>
             for {
               id      <- newId
-              results <- DefaultTestReporter.render(executedSpec.mapLabel(_.toString))
+              results <- DefaultTestReporter.render(executedSpec.mapLabel(_.toString), TestAnnotationRenderer.default)
               started = testStarted(label, id, pid)
               finished <- result.map {
                            case Right(TestSuccess.Succeeded(_)) =>
@@ -103,7 +118,7 @@ object TestRunnerReporter {
   private def testIgnored(label: String, id: Int) =
     tc(s"testIgnored name='${escapeString(label)}' nodeId='$id'")
 
-  private def testFailed(label: String, id: Int, res: List[RenderedResult]) = res match {
+  private def testFailed(label: String, id: Int, res: List[RenderedResult[String]]) = res match {
     case r :: Nil =>
       tc(s"testFailed name='${escapeString(label)}' nodeId='$id' message='Assertion failed:' " +
           s"details='${escapeString(r.rendered.drop(1).mkString("\n"))}'")

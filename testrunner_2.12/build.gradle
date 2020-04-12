@@ -15,7 +15,7 @@ java {
 
 dependencies {
     compileOnly 'org.scala-lang:scala-library:2.12.10'
-    compileOnly 'dev.zio:zio_2.12:1.0.0-RC17'
-    compileOnly 'dev.zio:zio-test_2.12:1.0.0-RC17'
+    compileOnly 'dev.zio:zio_2.12:1.0.0-RC18-2'
+    compileOnly 'dev.zio:zio-test_2.12:1.0.0-RC18-2'
     testImplementation 'org.scalatest:scalatest_2.12:3.1.1'
 }
